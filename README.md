@@ -29,7 +29,7 @@ deno install -g --allow-read --allow-write --allow-run --allow-env -n train-cond
 ### Run without installing
 
 ```bash
-deno run --allow-read --allow-write --allow-run --allow-env jsr:@wyattjoh/train-conductor
+deno run --allow-read --allow-write --allow-run --allow-env jsr:@wyattjoh/train-conductor setup
 ```
 
 ### From source
@@ -55,16 +55,21 @@ mv train-conductor ~/.local/bin/
 ## Usage
 
 ```
-train-conductor [OPTIONS]
+train-conductor <command> [OPTIONS]
+
+COMMANDS:
+  setup       Run worktree setup (symlinks + scripts)
+  validate    Validate configuration file without running setup
+  init        Create a default .conductor.local.toml template
 
 OPTIONS:
   -h, --help              Show help message
-  -i, --interactive       Select operations via interactive menu
-  -o, --only <list>       Run only specific operations (comma-separated)
+  -i, --interactive       Select operations via interactive menu (setup only)
+  -o, --only <list>       Run only specific operations (setup only)
                           Values: symlinks, <script-name>, all
-  -w, --workspaces        Run across all git worktrees (except main)
+  -w, --workspaces        Run across all git worktrees (setup only)
   -c, --config <path>     Override config file path
-  -n, --dry-run           Show what would be done without making changes
+  -n, --dry-run           Show what would be done without changes (setup only)
   -v, --verbose           Verbose output
       --version           Show version number
 ```
@@ -72,23 +77,29 @@ OPTIONS:
 ### Examples
 
 ```bash
+# Create a default configuration file
+train-conductor init
+
+# Validate the configuration file
+train-conductor validate
+
 # Run all operations (symlinks + all scripts)
-train-conductor
+train-conductor setup
 
 # Symlinks only
-train-conductor -o symlinks
+train-conductor setup -o symlinks
 
 # Symlinks + specific script
-train-conductor -o symlinks,install
+train-conductor setup -o symlinks,install
 
 # Run in all worktrees
-train-conductor -w
+train-conductor setup -w
 
 # Interactive mode
-train-conductor -i
+train-conductor setup -i
 
 # Dry run (preview changes)
-train-conductor -n
+train-conductor setup -n
 ```
 
 ## Configuration

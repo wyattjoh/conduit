@@ -192,3 +192,55 @@ export function getOperationNames(config: Config): string[] {
 
   return operations;
 }
+
+/**
+ * Load and parse a configuration file from an explicit path.
+ * Does not require being in a git worktree.
+ *
+ * @param configPath - Path to the config file
+ * @returns Parsed configuration
+ */
+export async function loadConfigStandalone(
+  configPath: string,
+): Promise<Config> {
+  let content: string;
+  try {
+    content = await Deno.readTextFile(configPath);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) {
+      throw new Error(`Configuration file not found: ${configPath}`);
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to read configuration file: ${message}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = parseToml(content);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to parse TOML configuration: ${message}`);
+  }
+
+  return validateConfig(parsed);
+}
+
+/** Default configuration template for init command */
+export const DEFAULT_CONFIG_TEMPLATE = `# train-conductor configuration
+# See: https://github.com/wyattjoh/train-conductor
+
+# Symlinks to create from main worktree to secondary worktrees
+[symlinks]
+# Tree symlinks recursively link directories, preserving local overrides
+# tree = ["node_modules", ".zed"]
+
+# Normal symlinks use glob patterns for files/directories
+# normal = [".env", "*.local.*"]
+
+# Scripts to run after symlinks are created
+# [[scripts]]
+# name = "install"
+# description = "Install dependencies"
+# command = "npm install"
+# optional = false
+`;

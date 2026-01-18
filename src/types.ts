@@ -87,6 +87,8 @@ export interface CliOptions {
   dryRun: boolean;
   /** Verbose output */
   verbose: boolean;
+  /** Subcommand if any (e.g., "validate", "init") */
+  subcommand?: string;
 }
 
 /**

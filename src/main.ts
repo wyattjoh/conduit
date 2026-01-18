@@ -9,8 +9,15 @@
 
 import { bold, cyan, gray, green, red, yellow } from "@std/fmt/colors";
 import { parseArgs } from "@std/cli/parse-args";
-import type { CliOptions, ExecutionContext } from "./types.ts";
-import { loadConfig, SYMLINKS_OPERATION } from "./config.ts";
+import { join } from "@std/path";
+import type { CliOptions, Config, ExecutionContext } from "./types.ts";
+import {
+  CONFIG_FILE_NAME,
+  DEFAULT_CONFIG_TEMPLATE,
+  loadConfig,
+  loadConfigStandalone,
+  SYMLINKS_OPERATION,
+} from "./config.ts";
 import {
   getCurrentWorktreeRoot,
   getMainWorktreePath,
@@ -31,26 +38,32 @@ function getHelpText(version: string): string {
 🚂 ${bold("train-conductor")} - Worktree setup tool v${version}
 
 ${bold("USAGE:")}
-  train-conductor [OPTIONS]
+  train-conductor <command> [OPTIONS]
+
+${bold("COMMANDS:")}
+  setup       Run worktree setup (symlinks + scripts)
+  validate    Validate configuration file without running setup
+  init        Create a default .conductor.local.toml template
 
 ${bold("OPTIONS:")}
   -h, --help              Show this help message
-  -i, --interactive       Select operations via interactive menu
-  -o, --only <list>       Run only specific operations (comma-separated)
+  -i, --interactive       Select operations via interactive menu (setup only)
+  -o, --only <list>       Run only specific operations (setup only)
                           Values: symlinks, <script-name>, all
-  -w, --workspaces        Run across all git worktrees (except main)
+  -w, --workspaces        Run across all git worktrees (setup only)
   -c, --config <path>     Override config file path
-  -n, --dry-run           Show what would be done without making changes
+  -n, --dry-run           Show what would be done without changes (setup only)
   -v, --verbose           Verbose output
       --version           Show version number
 
 ${bold("EXAMPLES:")}
-  train-conductor                       # Run all: symlinks + all scripts
-  train-conductor -o symlinks           # Symlinks only
-  train-conductor -o symlinks,install   # Symlinks + install script
-  train-conductor -w                    # Run in all worktrees
-  train-conductor -i                    # Interactive mode
-  train-conductor -n                    # Dry run
+  train-conductor setup                 # Run all: symlinks + all scripts
+  train-conductor setup -o symlinks     # Symlinks only
+  train-conductor setup -w              # Run in all worktrees
+  train-conductor setup -i              # Interactive mode
+  train-conductor setup -n              # Dry run
+  train-conductor validate              # Validate config file
+  train-conductor init                  # Create default config
 
 ${bold("CONFIGURATION:")}
   Create a .conductor.local.toml file in your repository root.
@@ -83,6 +96,9 @@ function parseCliArgs(args: string[]): CliOptions {
     },
   });
 
+  // Extract subcommand from positional args
+  const subcommand = typeof parsed._[0] === "string" ? parsed._[0] : undefined;
+
   return {
     help: parsed.help ?? false,
     interactive: parsed.interactive ?? false,
@@ -93,7 +109,67 @@ function parseCliArgs(args: string[]): CliOptions {
     configPath: parsed.config,
     dryRun: parsed["dry-run"] ?? false,
     verbose: parsed.verbose ?? false,
+    subcommand,
   };
+}
+
+/**
+ * Print a summary of the loaded configuration
+ */
+function printConfigSummary(configPath: string, config: Config): void {
+  const treeCount = config.symlinks?.tree?.length ?? 0;
+  const normalCount = config.symlinks?.normal?.length ?? 0;
+  const scriptCount = config.scripts?.length ?? 0;
+  const scriptNames = config.scripts?.map((s) => s.name).join(", ") ?? "";
+
+  console.log(green("Configuration valid: ") + configPath);
+  console.log(`  Symlinks: ${treeCount} tree, ${normalCount} normal`);
+  if (scriptCount > 0) {
+    console.log(`  Scripts: ${scriptCount} defined (${scriptNames})`);
+  } else {
+    console.log("  Scripts: none defined");
+  }
+}
+
+/**
+ * Run the validate subcommand
+ */
+async function runValidateCommand(options: CliOptions): Promise<void> {
+  const configPath = options.configPath ?? join(Deno.cwd(), CONFIG_FILE_NAME);
+
+  try {
+    const config = await loadConfigStandalone(configPath);
+    printConfigSummary(configPath, config);
+    Deno.exit(0);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(red("Error: ") + message);
+    Deno.exit(1);
+  }
+}
+
+/**
+ * Run the init subcommand
+ */
+async function runInitCommand(options: CliOptions): Promise<void> {
+  const configPath = options.configPath ?? join(Deno.cwd(), CONFIG_FILE_NAME);
+
+  // Check if file already exists
+  try {
+    await Deno.stat(configPath);
+    console.error(
+      red("Error: ") + `Configuration file already exists: ${configPath}`,
+    );
+    Deno.exit(1);
+  } catch (error) {
+    if (!(error instanceof Deno.errors.NotFound)) {
+      throw error;
+    }
+  }
+
+  // Write the template
+  await Deno.writeTextFile(configPath, DEFAULT_CONFIG_TEMPLATE);
+  console.log(green("Created: ") + configPath);
 }
 
 /**
@@ -201,7 +277,29 @@ async function main(): Promise<void> {
     Deno.exit(0);
   }
 
-  // Check if we're in a git worktree
+  // Handle subcommands that don't require worktree context
+  if (options.subcommand === "validate") {
+    await runValidateCommand(options);
+    return;
+  }
+
+  if (options.subcommand === "init") {
+    await runInitCommand(options);
+    return;
+  }
+
+  // Require a subcommand
+  if (options.subcommand !== "setup") {
+    if (options.subcommand) {
+      console.error(red("Error: ") + `Unknown command: ${options.subcommand}`);
+    } else {
+      console.error(red("Error: ") + "No command specified");
+    }
+    console.error(gray("Run 'train-conductor --help' for usage information."));
+    Deno.exit(1);
+  }
+
+  // Check if we're in a git worktree (required for setup)
   if (!(await isInWorktree())) {
     console.error(red("Error: ") + "Not in a git repository");
     Deno.exit(1);
